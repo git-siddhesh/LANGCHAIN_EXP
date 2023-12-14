@@ -9,3 +9,6 @@ streamlit
 transformers
 sentence_transformers
 python-dotenv
+pgvector
+psycopg2-binary
+chromadb
