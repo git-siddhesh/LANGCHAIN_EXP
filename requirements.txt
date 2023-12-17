@@ -1,5 +1,6 @@
 openai
 langchain
+langchain-cli
 streamlit
 PyPDF2
 faiss-cpu
@@ -12,3 +13,6 @@ python-dotenv
 pgvector
 psycopg2-binary
 chromadb
+langserve
+pydantic
+
