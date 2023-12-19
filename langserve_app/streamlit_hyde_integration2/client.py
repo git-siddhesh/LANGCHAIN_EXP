@@ -113,7 +113,7 @@ def print_flow_message():
             for chunk in last_response.content.split():
                 full_message = full_message + " " +chunk 
                 time.sleep(0.2)
-                st.markdown(full_message + "▌")
+                st.markdown(full_message + "|▌")
 
 
 #_______________________________________________________________________________________

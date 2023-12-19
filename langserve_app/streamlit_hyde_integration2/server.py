@@ -21,6 +21,8 @@ from langchain.storage import LocalFileStore
 from langchain.document_transformers import LongContextReorder
 reordering = LongContextReorder()
 from langchain.chains.question_answering import load_qa_chain
+from langchain.schema import StrOutputParser
+output_parser = StrOutputParser()
 
 from langchain.document_loaders import TextLoader
 import langchain
@@ -70,7 +72,7 @@ def load_model_n_embedding_hyde(llm_name: str, embedding_name: str, temperature:
     # try:
     if llm_name == "OpenAI":
         llm_hyde = OpenAI(temperature=temperature)
-        llm_query = ChatOpenAI(temperature=query_temperature)
+        llm_query = ChatOpenAI(model="gpt-3.5-turbo", temperature=query_temperature)
     else:
         llm_query = HuggingFaceHub(
                 repo_id=llm_name, 
@@ -128,7 +130,7 @@ def load_model_n_embedding(llm_name: str, embedding_name: str, temperature: floa
     # try:
     if llm_name == "openai-gpt":
         llm_hyde = OpenAI(temperature=0.3)
-        llm_query= ChatOpenAI(temperature=temperature)
+        llm_query= ChatOpenAI(model="gpt-3.5-turbo", temperature=temperature)
     else:
         llm_query = HuggingFaceHub(
                 repo_id=llm_name, 
@@ -262,22 +264,58 @@ async def isdbexists():
         return True
     return False
 
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain.schema import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
 from fastapi import Query
 from typing import List
+from operator import itemgetter
+
 @app.post("/search")
 async def search(query: str, history_qna: List[str] = Query(...)):
 
     global document_search_space
     # docs = document_search_space.similarity_search(query,k = 5)
     #------------------------------------------------------------------
-    docs = retriever.get_relevant_documents(query)
-    reordered_docs = reordering.transform_documents(docs)
+    reordered_docs = reordering.transform_documents(retriever.get_relevant_documents(query))
     global chain
-    # chain = prompt | model | ...
-    print(reordered_docs)
-    query = "; ".join(history_qna) + "; " + query
+    global llm_query
+    # prompt = PromptTemplate(
+    #     template="Answer the following question: {question}",
+    #     question=query,
+    # )
+
+    template = """Follow the Previous chat history: {history_qna}
+    Answer the question based only on the following context:
+    {context}
+    The Question is: {question}
+    """
+    prompt = ChatPromptTemplate.from_template(template)
+
+    def format_docs(docs):
+        return "\n\n".join([d.page_content for d in docs])
+
+    chain = (
+        {   "history_qna": itemgetter("history_qna"),
+        # {   "history_qna": RunnablePassthrough,
+            "context": retriever | format_docs, 
+            # "question": RunnablePassthrough()
+            "question": itemgetter("question")
+        }
+        | prompt
+        | llm_query
+        | output_parser
+    )
+    # chain = prompt | llm_query | output_parser
+
+    # print(reordered_docs)
+    # print(history_qna)
+    # query = "; ".join(history_qna) + "; " + query
     print(query)
-    answer = chain.run(input_documents = reordered_docs, question=query)
+    answer = chain.invoke({"history_qna": "; ".join(history_qna), "question": query})
+    #------------------------------------------------------------------
+    # answer = chain.run(input_documents = reordered_docs, question=query)
     #------------------------------------------------------------------
     # global r_chain
     # result = await r_chain.ainvoke( "what is covid-19?")
@@ -299,3 +337,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8004)
+
+# %%
