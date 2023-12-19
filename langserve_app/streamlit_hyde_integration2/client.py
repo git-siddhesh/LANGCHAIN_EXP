@@ -42,7 +42,7 @@ import requests
 
 # ''' 
 # data = {'query': 'What are the symptoms of alzheimer?'}
-# response = requests.post("http://localhost:8000/search", params=data)
+# response = requests.post("http://localhost:8004/search", params=data)
 # data_list = json.loads(response.content.decode())
 # print(data_list)
 
@@ -64,7 +64,8 @@ llm_map = {
 embedding_map = {
     'GTE' : "thenlper/gte-large",
     'bge_large': "BAAI/bge-large-en",
-    'bge_small' : "BAAI/bge-small-en",
+    # 'bge_small' : "BAAI/bge-small-en",
+    'bge_small' : "BAAI/bge-small-en-v1.5",
     'MiniLM-L6-v2' : "sentence-transformers/all-MiniLM-L6-v2",
     'OpenAI' : 'openai-gpt',
     'jina-embeddings' : "jinaai/jina-embeddings-v2-small-en",
@@ -197,12 +198,12 @@ def get_text(doc_path = '/home/dosisiddhesh/LANGCHAIN_EXP/pdfs', uploaded_file =
 def start_engine(button):
     texts = None
     if button == 'Local':
-        response = requests.post("http://localhost:8000/isdbexists").content.decode()
+        response = requests.post("http://localhost:8004/isdbexists").content.decode()
         print("isdbexist",response)
         if response == 'false':
             texts = get_text(doc_path="/home/dosisiddhesh/LANGCHAIN_EXP/pdfs", chunk_size=500, chunk_overlap=100)
-            # response = requests.post("http://localhost:8000/start", params={'texts': texts})
-            response = requests.post("http://localhost:8000/start", params={'texts': texts, 'chunk_size':500, 'chunk_overlap':100})
+            # response = requests.post("http://localhost:8004/start", params={'texts': texts})
+            response = requests.post("http://localhost:8004/start", params={'texts': texts, 'chunk_size':500, 'chunk_overlap':100})
             print(response.content.decode())
             if response.content.decode() == '"Success"':
                 st.info("Retriever created/loaded")
@@ -219,7 +220,7 @@ def start_engine(button):
             st.info("Implementation issue")
             time.sleep(10)
             restart()
-        # response = requests.post("http://localhost:8000/start", params={'texts': texts})
+        # response = requests.post("http://localhost:8004/start", params={'texts': texts})
         # print(response.content.decode())
         # if response.content.decode() == '"Success"':
         #     st.info("Retriever created/loaded")
@@ -231,7 +232,7 @@ def start_engine(button):
 
     if query := st.chat_input("Enter the question"):
 
-        response = requests.post("http://localhost:8000/search", params={'query': query})
+        response = requests.post("http://localhost:8004/search", params={'query': query})
         response_dict = json.loads(response.content.decode())
         docs = response_dict['documents']
         st.session_state['flowMessage'].append(HumanMessage(content=query))
@@ -257,7 +258,7 @@ def start_chat_bot(button, emb_model_button, llm_button):
                 'temperature':float(temp),
                 'DOC_SPACE_DIR': f'{DOC_SPACE_DIR}_{llm_button}_{emb_model_button}',
                   }
-        response = requests.post("http://localhost:8000/setvalue", params=data)
+        response = requests.post("http://localhost:8004/setvalue", params=data)
         print(response.content.decode())
         if response.content.decode() == '"Success"' or response.content.decode() == '"Already set"':
             st.info("Connected to the server and models loaded")
@@ -280,7 +281,7 @@ def start_chat_bot_server(button, emb_model_button, llm_button):
                 'temperature':float(temp),
                 'query_temperature':float(temp2),
                   }
-        response = requests.post("http://localhost:8000/setvaluehyde", params=data)
+        response = requests.post("http://localhost:8004/setvaluehyde", params=data)
         print(response.content.decode())
         if response.content.decode() == '"Success"' or response.content.decode() == '"Already set"':
             st.info("Connected to the server and models loaded")
@@ -295,7 +296,7 @@ def start_chat_bot_server(button, emb_model_button, llm_button):
             st.write(f'You selected: :green[{llm_button}] 	:wink:')
             
             if query := st.chat_input("Enter the question"):
-                response = requests.post("http://localhost:8000/search", params={'query': query})
+                response = requests.post("http://localhost:8004/search", params={'query': query})
                 response_dict = json.loads(response.content.decode())
                 docs = response_dict['documents']
                 st.session_state['flowMessage'].append(HumanMessage(content=query))
@@ -328,7 +329,17 @@ def restart():
         st.session_state['emb_model_button'] = None
     if 'llm_button' in st.session_state:
         st.session_state['llm_button'] = None
-    
+
+    if 'flowMessage' in st.session_state:
+        st.session_state['flowMessage'] = [
+            SystemMessage(content="Hi, I'm MedBuddy, your personal medical assistant. How can I help you?")
+        ]
+    response = requests.post("http://localhost:8004/restart")
+    print(response.content.decode())
+    if response.content.decode() == 'Success':
+        print("Restarted the server")
+    else:
+        print("Failed to restart the server")
     print(st.session_state)
 # ____________________________________________________________________________________________________________________________
 # ############################################################################################################################

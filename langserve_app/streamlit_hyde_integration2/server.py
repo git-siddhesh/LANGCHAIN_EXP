@@ -27,6 +27,8 @@ import os
 # langchain.debug = True
 
 from langchain.chains import RetrievalQA
+from PyPDF2 import PdfReader
+from langchain.text_splitter import CharacterTextSplitter
 
 
 import sys
@@ -47,7 +49,7 @@ llm_hyde = None
 llm_query = None
 retriever = None
 chain = None
-
+r_chain = None
 def load_model_n_embedding_hyde(llm_name: str, embedding_name: str, temperature: float, query_temperature: float):
     global embeddings
     if embedding_name == "thenlper/gte-large":
@@ -86,20 +88,84 @@ def load_model_n_embedding_hyde(llm_name: str, embedding_name: str, temperature:
         
     # the model which will be used for generating hypothetical documents
     hyde_embedding_gte = HypotheticalDocumentEmbedder.from_llm(llm_hyde, embeddings, prompt_key="web_search")
+    print("HyDe Embedding created")
     store = LocalFileStore("./cache_gte_pubmed/")
     cached_hyde_embedding_gte = CacheBackedEmbeddings.from_bytes_store(
         hyde_embedding_gte, store, 
     )
+    global document_search_space
     db = PGVector(
         connection_string=CONNECTION_STRING_2,
         embedding_function=cached_hyde_embedding_gte,
         collection_name="pubmed",
         distance_strategy=DistanceStrategy.COSINE,
     ) 
-
+    document_search_space = db
+    print("DB created/Loaded")
     global retriever
     retriever = db.as_retriever(search_kwargs={'k':3})
     # add_routes(app, retriever)
+    global r_chain
+    r_chain = RetrievalQA.from_llm(llm=llm_query, retriever=retriever, return_source_documents=True)
+
+def load_model_n_embedding(llm_name: str, embedding_name: str, temperature: float):
+    print(llm_name, embedding_name, temperature)
+    global embeddings
+    try:
+        if embedding_name == "openai-gpt":
+            embeddings = OpenAIEmbeddings() # getting the embedding model with dim 384
+        else:
+            embeddings = HuggingFaceEmbeddings(model_name=embedding_name)
+    except Exception as e: 
+        print("Error in embedding load: ",e)
+        embeddings = None
+        return   
+
+    global llm_query
+    global llm_hyde
+
+    # try:
+    if llm_name == "openai-gpt":
+        llm_query= OpenAI(temperature=temperature)
+        llm_hyde = OpenAI(temperature=0.3)
+    else:
+        llm_query = HuggingFaceHub(
+                repo_id=llm_name, 
+                model_kwargs={"temperature":temperature}
+            )
+        llm_hyde = HuggingFaceHub(
+                repo_id=llm_name, 
+                model_kwargs={"temperature":0.3}
+            )
+        
+    # except:
+    #     llm_query = None
+    #     llm_hyde = None
+    #     return
+    global chain
+    chain = load_qa_chain( llm=llm_query, chain_type="stuff") #why stuff?
+    hyde_embedding_gte = HypotheticalDocumentEmbedder.from_llm(llm_hyde, embeddings, prompt_key="web_search")
+    print("HyDe Embedding created")
+    embeddings = hyde_embedding_gte
+
+
+@app.post("/setvalue")
+async def setvalue(llm_name: str, embedding_name: str, temperature: float, DOC_SPACE_DIR: str):
+    global flag
+    return_value = ""
+    if flag:
+        global DOC_SPACE_DIR_
+        DOC_SPACE_DIR_ = DOC_SPACE_DIR
+        load_model_n_embedding(llm_name, embedding_name, temperature)
+        flag = False
+        if embeddings == None:
+            return_value +="Failed to load embedding; "
+        if llm_query == None:
+            return_value +="Failed to load llm; "
+        return return_value + "Success"
+    else:
+        return return_value + "Already set"
+
 
 flag = True
 @app.post("/setvaluehyde")
@@ -117,40 +183,6 @@ async def setvaluehyde(llm_name: str, embedding_name: str, temperature: float, q
     else:
         return return_value + "Already set"
 
-
-def load_model_n_embedding(llm_name: str, embedding_name: str, temperature: float):
-    print(llm_name, embedding_name, temperature)
-    global embeddings
-    try:
-        if embedding_name == "openai-gpt":
-            embeddings = OpenAIEmbeddings() # getting the embedding model with dim 384
-        else:
-            embeddings = HuggingFaceEmbeddings(model_name=embedding_name)
-    except Exception as e: 
-        print("Error in embedding load: ",e)
-        embeddings = None
-        return   
-
-
-    global llm_query
-
-    # try:
-    if llm_name == "openai-gpt":
-        llm_query= OpenAI(temperature=temperature)
-    else:
-        llm_query = HuggingFaceHub(
-                repo_id=llm_name, 
-                model_kwargs={"temperature":temperature}
-            )
-        
-    # except:
-    #     llm_query = None
-    #     llm_hyde = None
-    #     return
-    global chain
-    chain = load_qa_chain( llm=llm_query, chain_type="stuff") #why stuff?
-from PyPDF2 import PdfReader
-from langchain.text_splitter import CharacterTextSplitter
 
 def get_text(doc_path = '/home/dosisiddhesh/LANGCHAIN_EXP/pdfs', uploaded_file = False, chunk_size = 500, chunk_overlap = 100):
     myPdfReader = None
@@ -190,10 +222,13 @@ async def start(texts:str, chunk_size:int, chunk_overlap:int):
     global embeddings
     global retriever
     global document_search_space
+    global r_chain
+    global llm_query
+
     texts = get_text(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    print("Texts: ",texts)
-    print("type: ",type(texts))
-    input("Press Enter to continue...")
+    # print("Texts: ",texts)
+    # print("type: ",type(texts))
+    # input("Press Enter to continue...")
     return_value = ""
     if flag2:
         if not os.path.exists(DOC_SPACE_DIR_):
@@ -203,6 +238,8 @@ async def start(texts:str, chunk_size:int, chunk_overlap:int):
             document_search_space = FAISS.load_local(DOC_SPACE_DIR_, embeddings)
 
         retriever = document_search_space.as_retriever(search_kwargs={'k':3})
+        r_chain = RetrievalQA.from_llm(llm=llm_query, retriever=retriever, return_source_documents=True)
+
 
         flag2 = False
         return return_value + "Success"
@@ -224,50 +261,37 @@ async def isdbexists():
         return True
     return False
 
-@app.post("/setvalue")
-async def setvalue(llm_name: str, embedding_name: str, temperature: float, DOC_SPACE_DIR: str):
-    global flag
-    return_value = ""
-    if flag:
-        global DOC_SPACE_DIR_
-        DOC_SPACE_DIR_ = DOC_SPACE_DIR
-        load_model_n_embedding(llm_name, embedding_name, temperature)
-        flag = False
-        if embeddings == None:
-            return_value +="Failed to load embedding; "
-        if llm_query == None:
-            return_value +="Failed to load llm; "
-        return return_value + "Success"
-    else:
-        return return_value + "Already set"
-
-
-# In[]: Langserve implementation
-# Adds routes to the app for using the retriever under:
-# /invoke
-# /batch
-# /stream
-# from langserve import add_routes
-
-# add_routes(app, retriever)
 
 @app.post("/search")
 async def search(query: str):
     global document_search_space
-    docs = document_search_space.similarity_search(query,k = 5)
-    # docs = retriever.get_relevant_documents(query)
+    # docs = document_search_space.similarity_search(query,k = 5)
+    #------------------------------------------------------------------
+    docs = retriever.get_relevant_documents(query)
     reordered_docs = reordering.transform_documents(docs)
     global chain
     # chain = prompt | model | ...
     print(reordered_docs)
     print(query)
     answer = chain.run(input_documents = reordered_docs, question=query)
+    #------------------------------------------------------------------
+    # global r_chain
+    # result = await r_chain.ainvoke( "what is covid-19?")
+    # answer = result["result"]
+    # reordered_docs = result["source_documents"]
     print(answer)
     return {"answer": answer,
             "documents": reordered_docs}
 
+@app.post("restart")
+async def restart():
+    global flag
+    global flag2
+    flag = True
+    flag2 = True
+    return 'Success'
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8004)
