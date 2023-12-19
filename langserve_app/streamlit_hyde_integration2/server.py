@@ -8,6 +8,7 @@ from fastapi import FastAPI
 # In[]: Imports
 
 from langchain.llms import OpenAI
+from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings, HuggingFaceBgeEmbeddings
 from langchain.chains import LLMChain, HypotheticalDocumentEmbedder
 from langchain.prompts import PromptTemplate
@@ -69,7 +70,7 @@ def load_model_n_embedding_hyde(llm_name: str, embedding_name: str, temperature:
     # try:
     if llm_name == "OpenAI":
         llm_hyde = OpenAI(temperature=temperature)
-        llm_query = OpenAI(temperature=query_temperature)
+        llm_query = ChatOpenAI(temperature=query_temperature)
     else:
         llm_query = HuggingFaceHub(
                 repo_id=llm_name, 
@@ -126,8 +127,8 @@ def load_model_n_embedding(llm_name: str, embedding_name: str, temperature: floa
 
     # try:
     if llm_name == "openai-gpt":
-        llm_query= OpenAI(temperature=temperature)
         llm_hyde = OpenAI(temperature=0.3)
+        llm_query= ChatOpenAI(temperature=temperature)
     else:
         llm_query = HuggingFaceHub(
                 repo_id=llm_name, 
@@ -261,9 +262,11 @@ async def isdbexists():
         return True
     return False
 
-
+from fastapi import Query
+from typing import List
 @app.post("/search")
-async def search(query: str):
+async def search(query: str, history_qna: List[str] = Query(...)):
+
     global document_search_space
     # docs = document_search_space.similarity_search(query,k = 5)
     #------------------------------------------------------------------
@@ -272,6 +275,7 @@ async def search(query: str):
     global chain
     # chain = prompt | model | ...
     print(reordered_docs)
+    query = "; ".join(history_qna) + "; " + query
     print(query)
     answer = chain.run(input_documents = reordered_docs, question=query)
     #------------------------------------------------------------------

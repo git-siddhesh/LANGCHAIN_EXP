@@ -112,7 +112,7 @@ def print_flow_message():
             full_message = ""
             for chunk in last_response.content.split():
                 full_message = full_message + " " +chunk 
-                time.sleep(0.5)
+                time.sleep(0.2)
                 st.markdown(full_message + "▌")
 
 
@@ -231,8 +231,13 @@ def start_engine(button):
         #     st.info(f"Error: {response.content.decode()}")
 
     if query := st.chat_input("Enter the question"):
+        history_qna = []
+        for message in st.session_state['flowMessage']:
+            chat_message = f"{message.type}: {message.content}"
+            history_qna.append(chat_message)
+        print(history_qna)
 
-        response = requests.post("http://localhost:8004/search", params={'query': query})
+        response = requests.post("http://localhost:8004/search", params={'query': query, 'history_qna': history_qna})
         response_dict = json.loads(response.content.decode())
         docs = response_dict['documents']
         st.session_state['flowMessage'].append(HumanMessage(content=query))
@@ -296,7 +301,12 @@ def start_chat_bot_server(button, emb_model_button, llm_button):
             st.write(f'You selected: :green[{llm_button}] 	:wink:')
             
             if query := st.chat_input("Enter the question"):
-                response = requests.post("http://localhost:8004/search", params={'query': query})
+                history_qna = []
+                for message in st.session_state['flowMessage']:
+                    chat_message = f"{message.type}: {message.content}"
+                    history_qna.append(chat_message)
+                print(history_qna)
+                response = requests.post("http://localhost:8004/search", params={'query': query, 'history_qna': history_qna})
                 response_dict = json.loads(response.content.decode())
                 docs = response_dict['documents']
                 st.session_state['flowMessage'].append(HumanMessage(content=query))
