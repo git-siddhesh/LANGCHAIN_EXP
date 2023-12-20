@@ -392,18 +392,17 @@ with st.sidebar:
 
 # st slider
 temp = st.slider(
-    'Select the temperature for hyde', 0.0, 1.0, 0.3, key="temp",
+    'Select the temperature for hyde', 0.0, 1.0, 0.1, key="temp",
     # on_change=start_chat_bot, args=(button, emb_model_button, llm_button)            
     )
 
-temp2 = 0
+temp2 = st.slider(
+    'Select the temperature for query', 0.0, 1.0, 0.3, key="temp2",
+    )
 
 st.button("Restart", on_click=restart)
 if button and emb_model_button and llm_button :
     if button == 'pubmed-pgvector':
-        temp2 = st.slider(
-            'Select the temperature for query', 0.0, 1.0, 0.1, key="temp2",
-            )
         start_chat_bot_server(button, emb_model_button, llm_button)
     else:
         start_chat_bot(button, emb_model_button, llm_button)

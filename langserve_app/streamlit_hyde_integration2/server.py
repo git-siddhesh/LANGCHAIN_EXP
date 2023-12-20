@@ -32,6 +32,7 @@ import os
 from langchain.chains import RetrievalQA
 from PyPDF2 import PdfReader
 from langchain.text_splitter import CharacterTextSplitter
+from langchain.vectorstores import FAISS
 
 
 import sys
@@ -55,7 +56,9 @@ chain = None
 r_chain = None
 def load_model_n_embedding_hyde(llm_name: str, embedding_name: str, temperature: float, query_temperature: float):
     global embeddings
-    if embedding_name == "thenlper/gte-large":
+    if embedding_name == "thenlper/gte-large":  # 1536
+        embeddings = HuggingFaceEmbeddings(model_name="thenlper/gte-large") # getting the embedding model with dim 1536    if embedding_name == "thenlper/gte-large":  # 1536
+    elif embedding_name == "thenlper/gte-small":  # 384
         embeddings = HuggingFaceEmbeddings(model_name="thenlper/gte-small") # getting the embedding model with dim 384
     elif embedding_name == "bge_large":
         embeddings = HuggingFaceBgeEmbeddings(model_name="BAAI/bge-large-en")
@@ -97,16 +100,20 @@ def load_model_n_embedding_hyde(llm_name: str, embedding_name: str, temperature:
         hyde_embedding_gte, store, 
     )
     global document_search_space
-    db = PGVector(
-        connection_string=CONNECTION_STRING_2,
-        embedding_function=cached_hyde_embedding_gte,
-        collection_name="pubmed",
-        distance_strategy=DistanceStrategy.COSINE,
-    ) 
-    document_search_space = db
+    try:
+        db = PGVector(
+            connection_string=CONNECTION_STRING_2,
+            embedding_function=cached_hyde_embedding_gte,
+            collection_name="pubmed",
+            distance_strategy=DistanceStrategy.COSINE,
+        ) 
+        document_search_space = db
+    except Exception as e:
+        print("Error in db creation: ",e)
+        
     print("DB created/Loaded")
     global retriever
-    retriever = db.as_retriever(search_kwargs={'k':3})
+    retriever = document_search_space.as_retriever(search_kwargs={'k':3})
     # add_routes(app, retriever)
     global r_chain
     r_chain = RetrievalQA.from_llm(llm=llm_query, retriever=retriever, return_source_documents=True)
@@ -216,7 +223,6 @@ def get_text(doc_path = '/home/dosisiddhesh/LANGCHAIN_EXP/pdfs', uploaded_file =
     #     st.info("Creating the vector store")
     return texts    
 
-from langchain.vectorstores import FAISS
 document_search_space = None
 flag2 = True
 @app.post("/start")
@@ -272,6 +278,9 @@ from fastapi import Query
 from typing import List
 from operator import itemgetter
 
+@app.post("/resetall")
+
+
 @app.post("/search")
 async def search(query: str, history_qna: List[str] = Query(...)):
 
@@ -294,6 +303,7 @@ async def search(query: str, history_qna: List[str] = Query(...)):
     prompt = ChatPromptTemplate.from_template(template)
 
     def format_docs(docs):
+        # docs = reordering.transform_documents(docs)
         return "\n\n".join([d.page_content for d in docs])
 
     chain = (
@@ -325,7 +335,7 @@ async def search(query: str, history_qna: List[str] = Query(...)):
     return {"answer": answer,
             "documents": reordered_docs}
 
-@app.post("restart")
+@app.post("/restart")
 async def restart():
     global flag
     global flag2
